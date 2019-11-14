@@ -17,20 +17,22 @@ k = sys.argv[2]
 ### Inspired from:
 ### Dheekonda, R.S.R., 2017. Enumerating k-cliques in a large network using Apache Spark (Doctoral dissertation).
 
+print("Start KC Spark")
+
 # Step 1 (Generate Adjacency list)
 adjacencyList = edges \
-    .map(lambda l: re.split(r' ', l)) \
+    .map(lambda l: re.split(r'\s', l)) \
     .map(lambda x: (int(x[0]), int(x[1]))) \
     .map(lambda x: (x[0], [x[1]]) if x[0] < x[1] else (x[1], [x[0]])) \
     .reduceByKey(lambda a, b: a + b)
 
 # Step 2 (Broadcast adjacency list)
-bc_adjacencyList = sc.broadcast(adjacencyList.collectAsMap())
+bc_adjacencyMap = sc.broadcast(adjacencyList.collectAsMap())
 
 
 # Step 3 (Finding K cliques)
 def is_edge_exists(node, connected_nodes):
-    return all(node in bc_adjacencyList.value.get(x) for x in connected_nodes)
+    return all(node in bc_adjacencyMap.value.get(x, []) for x in connected_nodes)
 
 
 cliques = adjacencyList \
@@ -49,12 +51,16 @@ cliquesList = cliques.collect()
 cliquesMap = {k: v for v, k in enumerate(cliquesList)}
 totalCliques = len(cliquesMap)
 
+print("End KC Spark")
+
 # Save clique Map
 # cliquesMapFile = open(k + "-cliques-map-" + datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + ".csv", "w")
 # w = csv.writer(cliquesMapFile)
 # for key, val in cliquesMap.items():
 #     w.writerow([val, key])
 # cliquesMapFile.close()
+
+print("Start finding adjacent k-1 cliques")
 
 # Broadcast Cliques Map
 cliquesMap_bc = sc.broadcast(cliquesMap)
@@ -78,6 +84,10 @@ k_1_adjacency_map = cliques \
     .map(lambda x: (x[0], [v for v in x[1] if x[0] < v])) \
     .collectAsMap()
 
+print("End finding adjacent k-1 cliques")
+
+print("Start connected Components")
+
 # Find connected components (Using DFS)
 visited = [False] * totalCliques
 
@@ -99,6 +109,9 @@ for v in range(totalCliques):
     if not visited[v]:
         clique_communities.append(dfs(v))
 
+print("End connected components")
+
+print("Start Replacing clique numbers with actual cliques")
 
 # Replace clique numbers with actual cliques
 communities = []
@@ -107,6 +120,10 @@ for clique_community in clique_communities:
     for v in clique_community:
         community.extend(list((set(cliquesList[v]) - set(community))))
     communities.append(community)
+
+print("End Replacing clique numbers with actual cliques")
+
+print("Start output to file")
 
 # Write to file
 communitiesFile = open(k + "-communities-" + datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + ".txt", "w")
