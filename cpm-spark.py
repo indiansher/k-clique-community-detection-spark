@@ -45,15 +45,16 @@ cliques = cliques \
     .keys() \
     .map(lambda x: tuple(x))
 
-cliquesMap = {k: v for v, k in enumerate(cliques.collect())}
+cliquesList = cliques.collect()
+cliquesMap = {k: v for v, k in enumerate(cliquesList)}
 totalCliques = len(cliquesMap)
 
 # Save clique Map
-cliquesMapFile = open(k + "-cliques-map-" + datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + ".csv", "w")
-w = csv.writer(cliquesMapFile)
-for key, val in cliquesMap.items():
-    w.writerow([val, key])
-cliquesMapFile.close()
+# cliquesMapFile = open(k + "-cliques-map-" + datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + ".csv", "w")
+# w = csv.writer(cliquesMapFile)
+# for key, val in cliquesMap.items():
+#     w.writerow([val, key])
+# cliquesMapFile.close()
 
 # Broadcast Cliques Map
 cliquesMap_bc = sc.broadcast(cliquesMap)
@@ -68,45 +69,49 @@ def is_k_1_adjacent(clique1, clique2):
     return len(overlap_counter) == int(k)
 
 
-k_1_adjacency_edges = cliques \
+k_1_adjacency_map = cliques \
     .flatMap(lambda x: [((x[:j] + x[j + 1:]), [cliquesMap_bc.value[x]]) for j in range(len(x))]) \
     .reduceByKey(lambda a, b: a + b) \
     .values() \
     .flatMap(lambda x: [(v, x) for v in x]) \
     .reduceByKey(lambda a, b: a + b) \
-    .flatMap(lambda x: [(x[0], v) for v in x[1] if x[0] > v])
+    .map(lambda x: (x[0], [v for v in x[1] if x[0] < v])) \
+    .collectAsMap()
 
-print(k_1_adjacency_edges.take(10))
-
-
-# Find connected components:
-# Kiveris, R., Lattanzi, S., Mirrokni, V., Rastogi, V. and Vassilvitskii, S., 2014, November.
-# Connected components in mapreduce and beyond. In Proceedings of the ACM Symposium on Cloud Computing (pp. 1-13). ACM.
-# Vancouver
-
-def small_star(edges_rdd):
-    return edges_rdd \
-        .map(lambda x: (x[0], [x[1]]) if x[0] > x[1] else (x[1], [x[0]])) \
-        .reduceByKey(lambda a, b: a + b) \
-        .map(lambda x: (min(x[1]), x[1])) \
-        .flatMap(lambda x: [(v, x[0]) for v in x[1]])
+# Find connected components (Using DFS)
+visited = [False] * totalCliques
 
 
-def large_star(edges_rdd):
-    return edges_rdd \
-        .flatMap(lambda x: [(x[0], [x[1]]), (x[1], [x[0]])]) \
-        .reduceByKey(lambda a, b: a + b) \
-        .map(lambda x: (min(x[1] + [x[0]]), x[1])) \
-        .flatMap(lambda x: [(v, x[0]) for v in x[1] if v > x[0]])
+def dfs(node):
+    visited_nodes = [node]
+    visited[node] = True
+
+    for v in k_1_adjacency_map[node]:
+        if not visited[v]:
+            visited_nodes.extend(dfs(v))
+
+    return visited_nodes
 
 
-s = k_1_adjacency_edges
-t = large_star(small_star(s))
-print(t.take(10))
-while not s.subtract(t).isEmpty():
-    s = t
-    t = large_star(small_star(s))
-    print(t.take(10))
+# Run DFS
+clique_communities = []
+for v in range(totalCliques):
+    if not visited[v]:
+        clique_communities.append(dfs(v))
 
+
+# Replace clique numbers with actual cliques
+communities = []
+for clique_community in clique_communities:
+    community = []
+    for v in clique_community:
+        community.extend(list((set(cliquesList[v]) - set(community))))
+    communities.append(community)
+
+# Write to file
+communitiesFile = open(k + "-communities-" + datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + ".txt", "w")
+for community in communities:
+    communitiesFile.write("%s\n" % community)
+communitiesFile.close()
 
 sc.stop()
