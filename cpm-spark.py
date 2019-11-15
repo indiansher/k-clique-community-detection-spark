@@ -2,8 +2,11 @@ import re
 import sys
 import datetime;
 import csv
+import time
 import collections;
 from pyspark import SparkConf, SparkContext
+
+start = time.time()
 
 # Configure SparkContext
 conf = SparkConf()
@@ -123,12 +126,19 @@ for clique_community in clique_communities:
 
 print("End Replacing clique numbers with actual cliques")
 
+end = time.time()
+print("Execution Time: " + str(end - start) + " seconds")
+
 print("Start output to file")
 
 # Write to file
-communitiesFile = open(k + "-communities-" + datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + ".txt", "w")
+outputFileName = sys.argv[3]
+# communitiesFile = open(k + "-communities-" + datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + ".txt", "w")
+communitiesFile = open(outputFileName, "w")
 for community in communities:
-    communitiesFile.write("%s\n" % community)
+    communitiesFile.write("%s\n" % " ".join(map(str, community)))
 communitiesFile.close()
+
+print("End output to file")
 
 sc.stop()
